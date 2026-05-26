@@ -25,12 +25,11 @@ An example:
 
 Consider that you have a data set (N=1000) that, when you plot the histogram, looks like Figure `r (fig=fig+1)`
 
-```{r univariateMix, fig.cap="Histogram of a single variable, with an estimated normal distribution"}
+```{r univariateMix, fig.cap="Histogram of a single variable with an estimated normal distribution"}
 dat = rnorm(1000, mean=c(0, 1), sd = c(1, .2))
 
-hist(dat, main="Histogram", xlab="", breaks=50, freq = F)
+plot(hist(dat, breaks=50, plot=F), freq=F, main="Histogram", xlab="")
 lines(x=seq(-4,4, length=1000), y=dnorm(seq(-4,4, length=1000), mean(dat), sd(dat)))
-
 ```
 What might be going on here? The mean of the data is `r round(mean(dat),2)` with a standard deviation of `r round(sd(dat),2)`, but the "implied normal distribution" doesn't describe the data well. There appears to be a peak around 1, but a lot of data that is very low.
 
@@ -57,6 +56,7 @@ grid.arrange(ggplot(dists, aes(x=x, y=d, col=dist))+
 ```
 
 Figure `r (fig=fig+1)` compares that combined distribution to our histogram.
+
 ```{r mixModelDist, fig.cap="The mixed model distribution and the data."}
 
 dists = expand.grid(dist = 1:2, x = seq(-4,4,length=1000)) %>% 
@@ -72,6 +72,7 @@ lines(x=seq(-4,4, length=1000), y=univ$d, col=sos.cols["purple"]
       , lwd=2)
 
 ```
+
 
 Unsurprisingly, that distribution does a much better job of capturing the shape of the data.
 
