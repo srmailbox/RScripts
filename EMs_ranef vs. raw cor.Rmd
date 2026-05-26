@@ -1,0 +1,250 @@
+---
+title: "Correlations between RT and Freq effect"
+author: "LY"
+date: "30/04/2020"
+output:
+  html_document:
+    code_folding: hide
+---
+
+```{r message=FALSE}
+sessionInfo()
+
+rm(list = ls(all = TRUE))
+
+library(lmerTest)  
+library(emmeans)
+```
+
+#Reading
+```{r}
+#tw in reading and its pps
+rd<-read.csv("ReadingTW.csv", header=TRUE,sep = ",")
+rd$conds<-paste(rd$cond_wf,rd$cond_c1f,sep="_")
+```
+
+##ffd
+
+```{r}
+df = rd[ ,c("pps","items","cond_wf","cond_c1f","ffd","skp")]
+
+df$pps = as.factor(df$pps)
+df$items = as.factor(df$items)
+df$cond_wf = as.factor(df$cond_wf)
+df$cond_c1f = as.factor(df$cond_c1f)
+df$skp = as.integer(df$skp)
+df$ffd = as.numeric(as.character(df$ffd))
+
+matrix0 <- df
+matrix1 <- matrix0[!is.na(matrix0$ffd),]   
+matrix2 <- matrix1[matrix1$skp == 0,] 
+df<-matrix2
+```
+
+##ffd+wf
+```{r}
+dat<-aggregate(ffd~pps+cond_wf,df,mean,na.rm=TRUE)
+h<-subset(dat,cond_wf=='H')
+l<-subset(dat,cond_wf=='L')
+dat2<-merge(h,l,by="pps")
+dat2$freq<-dat2$ffd.y - dat2$ffd.x
+
+dat3<-aggregate(ffd~pps,df,mean,na.rm=TRUE)
+dat4<-merge(dat2,dat3,by="pps")
+
+cat("cor(ffd-wf)")
+cor.test(dat4$ffd,dat4$freq)
+
+cat("cor(ffd-hwffd)")
+cor.test(dat4$ffd,dat4$ffd.x)
+
+cat("cor(ffd-lwffd)")
+cor.test(dat4$ffd,dat4$ffd.y)
+```
+
+##ffd+cf
+```{r}
+dat<-aggregate(ffd~pps+cond_c1f,df,mean,na.rm=TRUE)
+h<-subset(dat,cond_c1f=='H')
+l<-subset(dat,cond_c1f=='L')
+dat2<-merge(h,l,by="pps")
+dat2$freq<-dat2$ffd.y - dat2$ffd.x
+
+dat3<-aggregate(ffd~pps,df,mean,na.rm=TRUE)
+dat4<-merge(dat2,dat3,by="pps")
+
+cat("cor(ffd-cf)")
+cor.test(dat4$ffd,dat4$freq)
+
+cat("cor(ffd-hcffd)")
+cor.test(dat4$ffd,dat4$ffd.x)
+
+cat("cor(ffd-lcffd)")
+cor.test(dat4$ffd,dat4$ffd.y)
+```
+
+
+```{r message=FALSE}
+contrasts(df$cond_wf) = c(-0.5,0.5)
+contrasts(df$cond_c1f) = c(-0.5,0.5)
+
+lmeraw<-lmer(ffd ~ cond_wf*cond_c1f + (cond_wf+cond_c1f|pps) + (1|items), data=df)
+summary(lmeraw)
+glmeraw<-glmer(ffd ~ cond_wf + (1|pps), data=df,
+              family="inverse.gaussian")
+
+modeloutput<-ranef(lmeraw)$pps
+cor.test(modeloutput$`(Intercept)`, modeloutput$cond_wf1)
+cor.test(modeloutput$`(Intercept)`, modeloutput$cond_c1f1)
+```
+
+##gd
+
+```{r}
+df = rd[ ,c("pps","items","cond_wf","cond_c1f","gd","skp")]
+
+df$pps = as.factor(df$pps)
+df$items = as.factor(df$items)
+df$cond_wf = as.factor(df$cond_wf)
+df$cond_c1f = as.factor(df$cond_c1f)
+df$skp = as.integer(df$skp)
+df$gd = as.numeric(as.character(df$gd))
+
+matrix0 <- df
+matrix1 <- matrix0[!is.na(matrix0$gd),]   
+matrix2 <- matrix1[matrix1$skp == 0,] 
+df<-matrix2
+```
+
+##gd+wf
+```{r}
+dat<-aggregate(gd~pps+cond_wf,df,mean,na.rm=TRUE)
+h<-subset(dat,cond_wf=='H')
+l<-subset(dat,cond_wf=='L')
+dat2<-merge(h,l,by="pps")
+dat2$freq<-dat2$gd.y - dat2$gd.x
+
+dat3<-aggregate(gd~pps,rd,mean,na.rm=TRUE)
+dat4<-merge(dat2,dat3,by="pps")
+
+cat("cor(gd-wf)")
+cor.test(dat4$gd,dat4$freq)
+
+cat("cor(gd-hwgd)")
+cor.test(dat4$gd,dat4$gd.x)
+
+cat("cor(gd-lwgd)")
+cor.test(dat4$gd,dat4$gd.y)
+```
+
+##gd+cf
+```{r}
+dat<-aggregate(gd~pps+cond_c1f,df,mean,na.rm=TRUE)
+h<-subset(dat,cond_c1f=='H')
+l<-subset(dat,cond_c1f=='L')
+dat2<-merge(h,l,by="pps")
+dat2$freq<-dat2$gd.y - dat2$gd.x
+
+dat3<-aggregate(gd~pps,rd,mean,na.rm=TRUE)
+dat4<-merge(dat2,dat3,by="pps")
+
+cat("cor(gd-cf)")
+cor.test(dat4$gd,dat4$freq)
+
+cat("cor(gd-hcgd)")
+cor.test(dat4$gd,dat4$gd.x)
+
+cat("cor(gd-lcgd)")
+cor.test(dat4$gd,dat4$gd.y)
+```
+
+
+```{r message=FALSE}
+contrasts(df$cond_wf) = c(-0.5,0.5)
+contrasts(df$cond_c1f) = c(-0.5,0.5)
+
+lmeraw<-lmer(gd ~ cond_wf*cond_c1f + (cond_wf+cond_c1f|pps) + (1|items), data=df)
+summary(lmeraw)
+
+modeloutput<-ranef(lmeraw)$pps
+cor.test(modeloutput$`(Intercept)`, modeloutput$cond_wf1)
+cor.test(modeloutput$`(Intercept)`, modeloutput$cond_c1f1)
+```
+
+##tt
+
+```{r}
+df = rd[ ,c("pps","items","cond_wf","cond_c1f","tt","skp")]
+
+df$pps = as.factor(df$pps)
+df$items = as.factor(df$items)
+df$cond_wf = as.factor(df$cond_wf)
+df$cond_c1f = as.factor(df$cond_c1f)
+df$skp = as.integer(df$skp)
+df$tt = as.numeric(as.character(df$tt))
+
+matrix0 <- df
+matrix1 <- matrix0[!is.na(matrix0$tt),]   
+matrix2 <- matrix1[matrix1$skp == 0,] 
+df<-matrix2
+```
+
+##tt+wf
+```{r}
+dat<-aggregate(tt~pps+cond_wf,df,mean,na.rm=TRUE)
+h<-subset(dat,cond_wf=='H')
+l<-subset(dat,cond_wf=='L')
+dat2<-merge(h,l,by="pps")
+dat2$freq<-dat2$tt.y - dat2$tt.x
+
+dat3<-aggregate(tt~pps,rd,mean,na.rm=TRUE)
+dat4<-merge(dat2,dat3,by="pps")
+
+cat("cor(tt-wf)")
+cor.test(dat4$tt,dat4$freq)
+
+cat("cor(tt-hwtt)")
+cor.test(dat4$tt,dat4$tt.x)
+
+cat("cor(tt-lwtt)")
+cor.test(dat4$tt,dat4$tt.y)
+```
+
+##tt+cf
+```{r}
+dat<-aggregate(tt~pps+cond_c1f,df,mean,na.rm=TRUE)
+h<-subset(dat,cond_c1f=='H')
+l<-subset(dat,cond_c1f=='L')
+dat2<-merge(h,l,by="pps")
+dat2$freq<-dat2$tt.y - dat2$tt.x
+
+dat3<-aggregate(tt~pps,rd,mean,na.rm=TRUE)
+dat4<-merge(dat2,dat3,by="pps")
+
+cat("cor(tt-cf)")
+cor.test(dat4$tt,dat4$freq)
+
+cat("cor(tt-hctt)")
+cor.test(dat4$tt,dat4$tt.x)
+
+cat("cor(tt-lctt)")
+cor.test(dat4$tt,dat4$tt.y)
+```
+
+
+```{r message=FALSE}
+contrasts(df$cond_wf) = c(-0.5,0.5)
+contrasts(df$cond_c1f) = c(-0.5,0.5)
+
+lmeraw<-lmer(tt ~ cond_wf*cond_c1f + (cond_wf+cond_c1f|pps) + (1|items), data=df)
+summary(lmeraw)
+
+modeloutput<-ranef(lmeraw)$pps
+cor.test(modeloutput$`(Intercept)`, modeloutput$cond_wf1)
+cor.test(modeloutput$`(Intercept)`, modeloutput$cond_c1f1)
+```
+
+#the end
+```{r}
+rm(list = ls(all = TRUE))
+```

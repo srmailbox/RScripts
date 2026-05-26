@@ -1,0 +1,78 @@
+---
+title: "Generating M/F Slopes From Regression"
+author: "Serje Robidoux"
+date: "17/11/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Intro
+
+I've managed to resolve the puzzle I was struggling with. The first part of this describes how to use the model coefficients to generate the slopes "by gender", depending on whether Gender is coded as a dummy variable (0/1) or as a Deviation coded variable (-1/1). I then illustrate how this leads to identical results for the *unstandardised* coefficients (which is what I expected). Then I demonstrate how it seems to be broken for the *standardised* coefficients.
+
+Then I turn to the mistake I've made: *I forgot that Gender is also standardized* in the standardized models.
+
+### The Model
+
+The basic model for our regressions looks like this (ignoring control variables for simplicity):
+
+$$ Reading = \beta_0 + \beta_G * Gender + \beta_E * EH + \beta_I * Gender * EH + \epsilon$$
+
+where $\beta_0$ is an intercept, $\beta_G$ is the Gender coefficient, $\beta_E$ is the EH coefficient, and $\beta_I$ is the interaction coefficient.
+
+Since we're interested in the EH slope overall, we can rewrite that as:
+
+$$Reading = \beta_0 + \beta_G * Gender + (\beta_E + \beta_I * Gender)*EH + \epsilon$$
+This means that for each gender, the slope for EH is given by:
+
+$$(\beta_E + \beta_I * Gender)$$
+
+### The coding schemes
+
+Depending on which coding scheme we use, the formula will look a little different:
+
+#### Dummy (or Treatment) Coding (0/1)
+
+If we dummy code the variable (as done originally by default), then we have the following:
+
+$$\text{Girls: } Slope = (\beta_E + \beta_I * Gender) = (\beta_E + \beta_I * 0) = \beta_E$$
+$$\text{Boys: } Slope = (\beta_E + \beta_I * Gender) = (\beta_E + \beta_I * 1) = \beta_E + \beta_I$$
+
+#### Deviation (or Sum) Coding (-1/1)
+
+If we deviation code the variable, then we have the following instead:
+
+$$\text{Girls: } Slope = (\beta_E + \beta_I * Gender) = (\beta_E + \beta_I * -1) = \beta_E- \beta_I$$
+$$\text{Boys: } Slope = (\beta_E + \beta_I * Gender) = (\beta_E + \beta_I * 1) = \beta_E + \beta_I$$
+
+#### Comparing the estimates
+If we consider the results for Adaptability (Unstandardized coefficients), everything works out nicely:
+
+Under the Dummy Coding scheme:
+$$\text{Girls: } = \beta_E = .302 \text{; Boys: } = \beta_E+\beta_I = .302-.455 = -.153$$
+Under the Deviation Coding:
+$$\text{Girls: } = \beta_E-\beta_I = .076-(-.229)=.305 \text{; Boys: } = \beta_E+\beta_I = .076+(-.229) = -.153$$
+(a small difference in girls is likely just because of the rounding of the coefficients)
+
+### Why I was Puzzled:
+
+What was puzzling to me is that the Standardized coefficients aren't always behaving the same way (staying with Adaptability):
+
+Under the Dummy Coding scheme:
+$$\text{Girls: } = \beta_E = .173 \text{; Boys: } = \beta_E+\beta_I = .173-.201 = -.028$$
+Under the Deviation Coding:
+$$\text{Girls: } = \beta_E-\beta_I = .043-(-.131)=.174 \text{; Boys: } = \beta_E+\beta_I = .043+(-.131) = -.088$$
+The difference in the boys' coefficients ($-.028$ vs $-.088$) can't just be down to rounding.
+
+#### The answer:
+
+In the above, I have forgotten that the standardized analysis is not using Gender as -1/1 or 0/1, but rather a standardized version of the Gender values. If the data were balanced between genders, then the scaled version would be relatively close to -1/1, but in our case there is an imbalance. Consequently the formulas I generated for the slopes don't work for standardised coefficients where the scaling might produce something like "Girls = -1.3, Boys = .7".
+
+## Final Word
+
+The standardized coefficients, using -1/1 are correct and should be what we use for the paper.
+
+Phew.
