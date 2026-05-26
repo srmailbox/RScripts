@@ -1,0 +1,74 @@
+---
+title: "Funnel Plots"
+author: "Serje Robidoux"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Create 1000 studies with random sample sizes drawn from a common effect size.
+NStudies = 1000
+trueES = .05
+obsES = numeric(NStudies)
+nullES = numeric(NStudies)
+obsSE = numeric(NStudies)
+N = numeric(NStudies)
+for (i in 1:NStudies){
+  se = runif(1, 0, .2)
+  N[i] = round(1/se^2)
+  smp = rnorm(N[i], mean = trueES, sd = 1)
+  obsES[i]=mean(smp)/sd(smp)
+  obsSE[i]=sd(smp)/sqrt(length(smp))
+  nullES[i]=obsES[i]-trueES
+}
+
+studies = data.frame(ID = 1:NStudies, obsES, nullES, obsSE, N) %>% 
+  mutate(published = pt(abs(obsES/obsSE), N-1)>=.975 | runif(n())<.01)
+critES = data.frame(N=c(5:1000, Inf)) %>%
+  mutate(nullES = qt(.975, df = N-1)/sqrt(N), obsSE = 1/sqrt(N))
+```
+
+# Funnel Plots
+
+## Under the Null
+
+```{r ExpNullFunnel}
+ggplot(studies, aes(x=nullES, y=1/sqrt(N)))+
+  geom_point(alpha=.5, col="darkgrey")+
+  geom_line(data=critES %>% filter(N>=min(studies$N)), col="red")+
+  geom_line(data=critES %>% filter(N>=min(studies$N)) %>% mutate(nullES=-nullES), col="red")+
+  theme_minimal()+scale_y_reverse()+
+  ggtitle("Expected distribution of effects by standard error when null is true.")+
+  xlab("Obs Effect Size")+ylab("N")
+```
+
+## For a small effect
+```{r smallESFunnel, echo=FALSE}
+ggplot(studies, aes(x=obsES, y=1/sqrt(N)))+
+  geom_point(alpha = .5, col="darkgrey")+
+  geom_line(data=critES %>% filter(N>=min(studies$N)) %>% mutate(obsES=nullES), col="red")+
+  geom_line(data=critES %>% filter(N>=min(studies$N)) %>% mutate(obsES=-nullES), col="red")+
+  theme_minimal()+scale_y_reverse()+
+  ggtitle("Expected distribution of effects by sample size true ES = .05.")+
+  xlab("Obs Effect Size")+ylab("N")
+
+```
+
+## Effect of Publication Bias
+
+```{r smallESFunnelBias, echo=FALSE}
+ggplot(studies[sample(NStudies, 50),], aes(x=obsES, y=1/sqrt(N), col=published))+
+  geom_point(alpha = .5)+
+  geom_line(data=critES %>% filter(N>=min(studies$N)) %>% mutate(obsES=nullES), col="red")+
+  geom_line(data=critES %>% filter(N>=min(studies$N)) %>% mutate(obsES=-nullES), col="red")+
+  theme_minimal()+scale_y_reverse()+
+    scale_color_manual(values=c("FALSE"=as.vector(sos.cols["grey"])
+                              , "TRUE"=as.vector(sos.cols["blue"])))+
+
+  ggtitle("Expected distribution of effects by sample size true ES = .05.")+
+  xlab("Obs Effect Size")+ylab("N")
+
+```
+

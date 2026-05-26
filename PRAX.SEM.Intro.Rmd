@@ -1,0 +1,159 @@
+---
+title: "SEM Intro"
+author: "Serje Robidoux"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+include(lavaan); include(semPlot);include(pander)
+include(tidyverse); include(mvtnorm);include(knitr)
+
+# Create some fake data
+set.seed(1129337568)
+```
+
+# Structural Equation Modelling
+
+The basic idea of SEM is that variables can be interrelated in complicated ways. Virtually all statistical tests are just different ways of relating data to each other.
+
+A t-test links a DV to two groups (or conditions). ANOVA links a DV to multiple different groups (conditions). ANCOVA links a DV to multiple different groups and conditions, and perhaps other variables. Regression allows you to link the DV to lots of different variables, in different ways. Mixed Effects (and Hierarchical) Models add another level of complexity by modelling more complex interrelations between data points.
+
+SEM is a super-flexible version of all of that. SEM allows you to model much more elaborate structures in your data. In fact, all of the types of analyses described above can be implemented as SEM models.
+
+## SEM and PRAX
+
+Take Gen's theoretical PRAX model for example (Figure 1). It forms a cycle that we generally believe starts with poor reading.
+
+![PRAX Model from McArthur (2022)](2022McArthurPRAXModel.png)
+
+If we assume that poor reading is the trigger, we could depict the timeline of PRAX as in Figure 2, Panel A. However, the model in Figure 1 leaves some things ambiguous, such as how the concepts in the orange and blue boxes are interrelated. Figure 2, Panel B depicts one possibility, but there are lots of others. There is also the possibility that the process does not start with Poor Reading, but rather with Inattention (Panel C).
+
+![Different ways of thinking about the model](PRAXSEMModels.png)
+
+Structural equation modelling allows us to test all of these different possibilities (assuming we have the right data available). If you can draw the structure you want to examine using these kinds of box and arrow diagrams to link your data, you can test it in SEM.
+
+In this case we would need measures of all of the relevant variables at the right time points.
+
+# SEM general concepts
+
+At this point, we need to discuss some general SEM concepts.
+
+## Observed Variable
+
+This is a variable that you actually measured directly, and exists in your dataset as a set of values. These are (typically) depicted with rectangles (as in the Toy Examples above).
+
+## Latent Variable
+
+In general this is a hypothetical variable that is difficult to measure directly and accurately, but that you have several different "observed" variables for. An example might be social anxiety where you might use observed scores from the RCADS and SCAS, combined with a professional assessment of video interactions, and diagnostic data. These are usually depicted with ovals (as in the depictions of the PRAX Model, or in Figure 3).
+
+```{r latentVar, echo=F, warning=F, fig.cap = "SEM diagram of a latent variable [Social Anxiety] based on 4 observed variables [SCAS, RCADS, Diagnosis, and Video Assessment]"}
+
+lvDat = data.frame(RCADS = rnorm(100)) %>% 
+  mutate(SCAS = RCADS+rnorm(100, sd = .01)
+         , Dx = RCADS+rnorm(100, sd = .5)
+         , Video = RCADS+rnorm(100, sd = .01))
+
+lavMod = 'SocAx =~ RCADS+SCAS+Dx+Video'
+semPaths(sem(lavMod, lvDat), whatLabels="none", what="path")
+
+```
+
+It might seem counter-intuitive, but the arrows always go *from* the latent variable *to* the observed variables. Even though the latent variable is "made up of" the observed variables, the conceptual idea is that the underlying *those observed variables are actually being produced by the latent variable*, not vice-versa.
+
+As a rule of thumb, latent variables should be made up of at least 3 observed variables.
+
+## Arrows
+
+Arrows come in several forms:
+
+1.  **single-headed arrows** indicate a regression (or "predictive") relationship. These are always between two variables (observed or latent).
+2.  **double-headed arrows between variables** indicate a covariance (correlation) between those two variables.
+3.  **double-headed arrows on a single variable** indicate that variable's "unexplained" variance.
+
+Other features (like what dotted arrows represent, whether the arrows are curved or straight, etc...) are software specific.
+
+### An example with all of these
+
+In Figure 4, I depict the regression version of a toy model focussed only on attention, reading ability and reading anxiety. In this model Reading and attention are latent variables and Reading Anxiety is measured with the MoRAT.
+
+![Example of a combination of latent and observed variables in an SEM diagram](SEMModelExample.png){width="60%"}
+
+```{r toyDat, echo=F, warning=F, fig.cap = "Artificial data and modelling results for the latent model in Figure 4."}
+
+covMat = matrix(0, nrow=7, ncol=7)
+diag(covMat)=1
+readMat = matrix(c(1,.7,.8,.7,1,.6,.8,.6,1), nrow=3)
+attMat = matrix(c(1,.4,.9,.4,1,.5,.9,.5,1), nrow=3)
+covMat[1:3,1:3]=readMat
+covMat[4:6,4:6]=attMat
+covMat[7,1:6]=round(runif(6,0,.5),2)
+covMat[1:6,7]=covMat[7,1:6]
+dat = rmvnorm(100, mean=runif(7)*10,
+              sigma=covMat) %>% scale
+colnames(dat)=c("CC2NW", "CC2Irr", "TOWRE", "SDQ", "ADHD", "DotProbe", "MoRAT")
+
+semMod = '
+Reading =~ CC2NW+CC2Irr+TOWRE #X1RQURTE+T17CHR
+
+Attention =~ SDQ+ADHD+DotProbe
+
+MoRAT ~ Reading + Attention
+
+Reading ~~ Attention
+'
+
+semSEM = sem(semMod, dat)
+
+semPaths(semSEM, whatLabels="est")
+```
+
+# What SEM is really doing.
+
+In the model in Figure 4, there are 7 observed variables (3 each for the latent variables, plus the MoRAT). I've generated some fake data that relates these and fit the same SEM model. That appears in Figure 5.
+
+## How SEM picks parameter estimates
+
+SEM is mostly interested in the covariance matrix of your data. If we take the dataset of 7 observed variables, Table 1 describes the covariance matrix.
+
+SEM tries to find values for all of the arrows in your model that allows it to reproduce that matrix as closely as possible.
+
+You can think of this as similar to how regression is trying to choose weights that predicts the individual Reading Anxiety values as accurately as possible. The better the model is, the better your regression model can predict the DV. In SEM's case, the better the model fits, the more the covariance matrix implied by the model matches the true covariance matrix.
+
+```{r covMatrices, echo=F}
+round(cor(dat[,colnames(dat)]), 3) %>% 
+  kable(caption="Covariance matrix for the dataset")
+
+lavInspect(semSEM, "implied")$cov[colnames(dat)
+                             ,colnames(dat)] %>%
+  kable(caption="Implied covariance matrix from the fitted model.", 
+        digits=3)
+
+```
+
+There are a lot of covariances here (28 to be exact), so let's just focus on the last column. You can see that the values from the model (Table 2) are reasonably similar but do vary from the original dataset (Table 1). In particular, the model somewhat overestimates the relationship between the CC2NW and the MoRAT, and understimates the relationship for the MoRAT and the TOWRE.
+
+But where do those implied covariances come from?
+
+## Path Analysis
+
+Let's focus on the three key variables for the moment - Reading, Attention, and MoRAT. If we want to talk about the link from Reading to MoRAT, we can decompose that here into two different components.
+
+1.  The direct link from Reading to MoRAT - In Figure 5, this is $0.63$.
+2.  An *indirect* relationship through Attention. To get this influence, we follow along the path from Reading to Attention, and Attention to MoRAT, multiplying the coefficients as we go: $.07\times .57 = .04$.
+
+This implies that the **total** influence of Reading on the MoRAT is approximately $0.63 + .04 = .67$.
+
+Similarly, we can work out that the influence of Attention on the MoRAT is the direct influence of $0.57$ plus the indirect influence through Reading - $.07 \times .63 = .044$ - or about $.614$.
+
+### Reconstructing the covariance matrix
+
+This path analysis approach is how we get Table 2. You take each pair of observed variables (rectangles) and add up the influences along all of the paths that get you from one to the other.
+
+E.g., let's take the MoRAT and the TOWRE variables. We have the following paths:
+
+1.  Through Reading to MoRAT: $1.16 \times .63 = .7308$
+2.  Through Reading, to Attention, and then to the MoRAT: $1.16 \times .07 \times .57 = .043$
+
+Giving us a total influence of around $.77$
