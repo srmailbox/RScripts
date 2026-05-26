@@ -1,0 +1,493 @@
+---
+title: "Mixture Modelling and Latent Profile Analysis"
+author: "Serje Robidoux"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+include(tidyverse); include(gridExtra);include(mvtnorm);include(plot3D)
+knitr::opts_chunk$set(echo = FALSE)
+set.seed(1850863759)
+fig=0
+tbl=0
+```
+
+# Mixture Modelling
+
+The basic idea of mixture modelling is that when you are looking at distributions of data, you don't always know if you are looking at data from one population, or from many.
+
+Mixture modelling attempts to uncover if there are actually several distinct populations in your data.
+
+An example:
+
+## Single variable
+
+Consider that you have a data set (N=1000) that, when you plot the histogram, looks like Figure `r (fig=fig+1)`
+
+```{r univariateMix, fig.cap="Histogram of a single variable, with an estimated normal distribution"}
+dat = rnorm(1000, mean=c(0, 1), sd = c(1, .2))
+
+hist(dat, main="Histogram", xlab="", breaks=50, freq = F)
+lines(x=seq(-4,4, length=1000), y=dnorm(seq(-4,4, length=1000), mean(dat), sd(dat)))
+
+```
+What might be going on here? The mean of the data is `r round(mean(dat),2)` with a standard deviation of `r round(sd(dat),2)`, but the "implied normal distribution" doesn't describe the data well. There appears to be a peak around 1, but a lot of data that is very low.
+
+One possibility is that the data are taken from two different groups, that have different means and variances.  In this case, that is exactly right. I randomly sampled 500 data points from a Normal distribution with a mean of 0 and standard deviation of 1; and another 500 from a Normal distribution with a mean of 1 and a standard devation of .2. Figure `r (fig=fig+1)` depicts these two distributions, and what the distribution looks like when you sample from the two populations *without knowing that there are two distributions*.
+
+```{r twoDists, fig.cap="The populations, and their combined distribution", fig.height=2}
+dists = expand.grid(dist = 1:2, x = seq(-3,3,length=1000)) %>% 
+  mutate(mu = dist-1
+         , sigma = if_else(dist==1, 1, .2)
+         , d = dnorm(x, mu, sigma)
+         , dist = factor(dist))
+univ = aggregate(d~x, dists %>% select(x,d), mean)
+
+
+grid.arrange(ggplot(dists, aes(x=x, y=d, col=dist))+
+  geom_line()+
+  SOS$Theme+SOS$Colour+theme(legend.position="none")
+
+, ggplot(univ, aes(x=x, y=d))+
+  geom_line(col=sos.cols["purple"])+
+  SOS$Theme+SOS$Colour
+, nrow=1)
+
+```
+
+Figure `r (fig=fig+1)` compares that combined distribution to our histogram.
+```{r mixModelDist, fig.cap="The mixed model distribution and the data."}
+
+dists = expand.grid(dist = 1:2, x = seq(-4,4,length=1000)) %>% 
+  mutate(mu = dist-1
+         , sigma = if_else(dist==1, 1, .2)
+         , d = dnorm(x, mu, sigma)
+         , dist = factor(dist))
+univ = aggregate(d~x, dists %>% select(x,d), mean)
+
+
+hist(dat, main="Histogram", xlab="", breaks=50, freq=F)
+lines(x=seq(-4,4, length=1000), y=univ$d, col=sos.cols["purple"]
+      , lwd=2)
+
+```
+
+Unsurprisingly, that distribution does a much better job of capturing the shape of the data.
+
+This was a toy example, though. Usually, you don't know:
+
+1. Whether or not there is more than one underlying distribution generating your data;
+2. how many underlying distributions there are; or
+3. what each of those distributions look like.
+
+Also, in most cases you are not using only a single variable. You might have dozens of variables creating large "multivariate" distributions.
+
+Mixture Modelling is a set of methods that are used to try and "uncover" the answer to those three questions.
+
+\newpage
+## A bivariate example
+
+Now let's look at what happens when you have two variables that are correlated around .8.
+
+Figure `r (fig=fig+1)` depict the data if this was from a single population. You can see from the 3D plot that it sort of looks like a mountain. And the 2D plot is the scatterplot but with colours to indicate how much data is in each section.
+
+
+```{r bivariateSample, fig.cap = "3D Histogram and 2D plot of some bivariate data."}
+
+dat = rmvnorm(100000
+              , mean=c(0, 1, 1.5)
+              , sigma=matrix(
+                c(            1,          .7*sqrt(.2), .5*sqrt(.5)
+                  , .7*sqrt(.2),                   .2, .6*sqrt(.5)*sqrt(.2)
+                  , .5*sqrt(.5), .6*sqrt(.5)*sqrt(.2), .5)
+                , nrow=3)) %>% data.frame %>% 
+  mutate(x = round(X1, 1), y=round(X2, 1), z=round(X3, 1))
+
+grps_z = table(dat$x, dat$y)
+
+par(mfrow=c(1,2))
+hist3D(z=grps_z, phi=45, theta=10, x = as.numeric(rownames(grps_z))
+       , y=as.numeric(colnames(grps_z)))
+image2D(grps_z, x = as.numeric(rownames(grps_z)), y=as.numeric(colnames(grps_z)))
+
+```
+
+So an ideal bivariate normal distribution from a single population looks like a nice smooth mountain or hill.
+
+### A bivariate example, but with a mixture of samples.
+
+```{r multiMix, fig.cap = "3D histogram of a mixture of different bivariate data."}
+
+# Randomly select the # of distributions:
+ndists = 3
+smps = sample(250:10000, ndists)
+centres = matrix(runif(ndists*3)*3, ncol=3)# %>% data.frame
+vars = matrix(runif(ndists*3), ncol=3) %>% data.frame %>% 
+  mutate(covX1X2 = runif(ndists, min=.5*X1*X2, max=X1*X2)
+         , covX1X3 = runif(ndists, min=.5*X1*X3, max=X1*X3)
+         , covX2X3 = runif(ndists, min=.5*X2*X3, max=X2*X3))
+
+grps = vector("list", ndists)
+
+for(i in 1:ndists)
+  grps[[i]]=rmvnorm(smps[i], centres[i,1:3], 
+                    matrix(unlist(vars[i,c(1,4,5,4,2,6,5,6,3)]), nrow=3)) %>% 
+  data.frame
+
+grps = grps %>% bind_rows %>% mutate(x=round(X1, 1), y=round(X2,1), z=round(X3,1))
+
+grps_z = table(grps$y, grps$z)
+
+par(mfrow=c(1,2))
+hist3D(z=log(grps_z+1), phi=45, theta=45, x = as.numeric(rownames(grps_z))
+       , y=as.numeric(colnames(grps_z)))
+image2D(log(grps_z+1), x = as.numeric(rownames(grps_z)), y=as.numeric(colnames(grps_z)))
+
+```
+
+Now instead of a single smooth mountain, the 3D plot in Figure `r (fig=fig+1)` kind of looks like a mountain range, with a large mountain with a knife-edge ridge, and then some some foothills and saddles.
+
+# Latent Profile Analysis
+
+LPA is just mixture modelling. The idea is that we are looking for ways to split the data up into different sets of "bivariate normal distributions" that when you mix them together, you get something like the data you actually observed.
+
+The way most LPA analyses work is they literally just guess a bunch of times and try to figure out which guesses do the best job of matching your data. (They guess in very principled ways, and penalize overly complex models, but it is basically just guessing.)
+
+What I mean by that is that the models make assumptions about how many groups there might be and what kinds of shapes those groups might produce, and then test those until they find something that fits well.
+
+So let's have a look at that.
+
+## LPA with mclust
+
+I'm going to use the mclust package for this because it just seems the most intuitive to me.
+
+```{r mclust, echo=T, message=F}
+library(mclust)
+colnames(grps) = c("Reading", "Math", "NeedForCog", "x", "y")
+grps.LPA = grps %>% select(Reading, Math)
+# our data is in a dataset called grps, and we only want to use Reading and Math
+# There is a third variable in grps called NeedForCog that we'll discuss later.
+
+# the first step is to just let mclust do all of the guessing.
+# mclustBIC() returns how well the best guess did for:
+# A: different numbers of groups (how many mountains?)
+# B: different assumptions about the features of the groups (shapes of the mountains)
+
+grps.BIC = mclustBIC(grps.LPA %>% scale)
+plot(grps.BIC)
+
+```
+
+mclustBIC() does a bunch of guessing based on how many groups (components) there might be, and each line/shape/colour represents different assumptions about what the shapes of those groups might be.
+
+From Figure `r (fig=fig+1)` there are clearly some models that do better than others and it seems like we need at least 2 groups (high values are better than low). But it's not obvious that any one model is dominant. We can look at the actual results and get a bit more guidance.
+
+```{r mclustBIC, echo=T}
+grps.BIC
+```
+
+What we get here are the measures of how well the "best" fit was for each kind of model, and for 1-9 different groups. The larger the BIC value (careful with negative values), the better the fit and the analysis seems to favour some pretty complex models (VVV with 3 or 4 groups, and VEV with 4 groups).
+
+We'll return to the letters later, so leave them aside for the moment. Let's just look at how each model is splitting up the data.
+
+```{r mclustBest, echo=T, fig.cap = "Depictions of how the three best-fitting models split the data up"}
+
+par(mfrow=c(1,3))
+grps.mclst = Mclust(grps.LPA, model="VVV", G=3, x = grps.BIC)
+plot(grps.mclst, what="classification", ylim=c(-2,6), xlim=c(-2,6))
+title(main="VVV, 3")
+
+grps.mclst = Mclust(grps.LPA, model="VVV", G=4, x = grps.BIC)
+plot(grps.mclst, what="classification", ylim=c(-2,6), xlim=c(-2,6))
+title(main="VVV, 4")
+
+grps.mclst = Mclust(grps.LPA, model="VEV", G=4, x=grps.BIC)
+plot(grps.mclst, what="classification", ylim=c(-2,6), xlim=c(-2,6))
+title(main="VVV, 5")
+
+
+```
+
+```{r bestMod}
+
+# cbind(grps.mclst$data, grps.mclst$z) %>% data.frame %>%  
+#   rename(G1=V3, G2=V4, G3=V5, G4=V6) %>% 
+#   ggplot(aes(x=Reading, y=Math))+
+#   geom_point(mapping=aes(alpha=G1/3), col=hsv(h=1/grps.mclst$G), size=.3)+
+#   geom_point(mapping=aes(alpha=G2/3), col=hsv(h=2/grps.mclst$G), size=.3)+
+#   geom_point(mapping=aes(alpha=G3/3), col=hsv(h=3/grps.mclst$G), size=.3)+
+#   geom_point(mapping=aes(alpha=G4/3), col=hsv(h=4/grps.mclst$G), size=.3)+
+#   theme_minimal()
+```
+
+We can see right away that the three "best fitting" models are have some similarities, but also disagree in some ways. They all agree there two large sets of kids who score relatively low on reading, but one group is better at math (red and blue), threre is also a third set of particularly good readers who are poor at math. The models disagree in how exactly those groups are arranged, and in particular wether there should be a group of particularly strong readers.
+
+The black circles with lines are there to describe the position, size, and direction of each of the distributions.
+
+Next we'll discuss what those letters in the model names mean, and then return to what is happening here.
+
+## Model Types
+
+Each of the three letters in the model names have specific meanings and talk about different features of the groups (and how they relate to each other).
+
+For this discussion we're just going to look at how the models behave when we assume there are 2 groups just to make things a little bit easier to see.
+
+### First Letter: Space
+
+The first letter can be thought of as "how much space each group is allowed to take up." "E" means that each group should take up the same amount of "space" in the figure. "V" means that some groups might take up more space than others.
+
+This is easier to see in a figure. Figure `r (fig=fig+1)` depicts what happens when change the first letter from E to V (ignore the other letters). We'll also assume there are only 2 groups.
+
+```{r letter1, echo=T, fig.cap = "Comparing the Exx vs Vxx models", fig.height=4}
+
+par(mfrow=c(1,2))
+grps.mclst = Mclust(grps.LPA, model="EII", G=3, x = grps.BIC)
+plot(grps.mclst, what="classification", ylim=c(-2,6), xlim=c(-2,6)
+     , colors=c("#FF008888", "#08FF8088", "#0055FF88"))
+title(main="EII, 2")
+
+grps.mclst = Mclust(grps.LPA, model="VII", G=3, x = grps.BIC)
+plot(grps.mclst, what="classification", ylim=c(-2,6), xlim=c(-2,6)
+     , colors=c("#FF008888", "#08FF8088", "#0055FF88"))
+title(main="VII, 2")
+```
+
+What you can see from Figure `r fig` is that the circles describing the distributions are the exact same shape and size in the "EII" model, while they have different sizes in the "VII" model. In particular, the "green group" has shrunk, and given up a bit of space to the pink group.
+
+### Second Letter: Relative amounts of each variable
+
+In the two models in Figure `r fig`, the only thing that changes is the size of the circle. The general shape is the same (in fact those models assume exactly equal variance in the X and Y directions).
+
+The second letter controls whether or not the distributions can have different variances in the Reading and Math directions.
+
+* **I**: The variance in the Reading and Math directions must be equal.
+* **E**: The variance in the Reading and Math directions do not have to be equal, but the proportions must be the same across all groups.
+* **V**: The variance in the Reading and Math directions do not have to be equal, and the proportions can be different for each group.
+
+```{r letter2, echo=T, fig.cap = "Comparing the xIx vs xEx vs xVx models", fig.height=2.5}
+
+par(mfrow=c(1,3))
+grps.mclst = Mclust(grps.LPA, model="EII", G=2, x = grps.BIC)
+plot(grps.mclst, what="classification", ylim=c(-2,6), xlim=c(-2,6))
+title(main="EII, 2")
+
+grps.mclst = Mclust(grps.LPA, model="EEI", G=2, x = grps.BIC)
+plot(grps.mclst, what="classification", ylim=c(-2,6), xlim=c(-2,6))
+title(main="EEI, 2")
+
+grps.mclst = Mclust(grps.LPA, model="EVI", G=2, x = grps.BIC)
+plot(grps.mclst, what="classification", ylim=c(-2,6), xlim=c(-2,6))
+title(main="EVI, 2")
+```
+
+Figure `r (fig=fig+1)` illustrates these differences. You can see that the circles are perfect circles in the EII model on the left - this is because the "I" means that in every group, the two variables have to have exactly the same variance. In the middle panel, this constraint is relaxed and now there is a bit more variance in the Math direction than in the Reading direction - but the "E" forces the model to use the same variances for both groups. The right panel ("EVI") allows the variances to differ between the two groups This produces very wide Reading variances for the red group, and generally wider Math variances for the blue group.
+
+### Letter 3: Direction (covariance)
+
+In the previous models, the groups assumed that Reading and Math were uncorrelated. What this means is that the circles and ovals are pointing up and down or left and right, rather than diagonally.
+
+The third letter allows you to manipulate whether or not the variables can be correlated. The coding scheme is similar to Letter 2.
+
+* **I**: The covariance between Reading and Math must be 0.
+* **E**: The covariance between Reading and Math does not have to be 0, but it must be the same across all groups.
+* **V**: The covariance between Reading and Math does not have to be 0, and the covariance can be different for each group.
+
+```{r letter3, echo=T, fig.cap = "Comparing the xxI vs xxE vs xxV models", fig.height=2.5}
+
+par(mfrow=c(1,3))
+grps.mclst = Mclust(grps.LPA, model="EEI", G=2, x = grps.BIC)
+plot(grps.mclst, what="classification", ylim=c(-2,6), xlim=c(-2,6))
+title(main="EEI, 2")
+
+grps.mclst = Mclust(grps.LPA, model="EEE", G=2, x = grps.BIC)
+plot(grps.mclst, what="classification", ylim=c(-2,6), xlim=c(-2,6))
+title(main="EEE, 2")
+
+grps.mclst = Mclust(grps.LPA, model="EEV", G=2, x = grps.BIC)
+plot(grps.mclst, what="classification", ylim=c(-2,6), xlim=c(-2,6))
+title(main="EEV, 2")
+```
+
+Figure `r (fig=fig+1)` illustrates the difference in rotation. In the leftmost panel, all of the covariances are 0 and so the dotted lines form perfect pluses. In the middle panel, they are now rotated a little bit to reflect that there is a correlation between Reading and Math, but that correlation is assumed to be equal in all three groups. It's fairly obvious that this does not work very well for the red group. In the rightmost panel, though, you can see that the correlation is fairly pronounced for the blue group, but nearly absent in the red group.
+
+# OK, we have groups. Now what?
+
+Once you have the results of the LPA, you probably want to examine the results and understand what they mean.
+
+For this section we're going to stick with the "best fitting" VVV model with 3 groups.
+
+The LPA results gives you several ways of examining the results.
+
+## Characteristics of the "circles"
+
+One thing we can do is just take a closer look at the characteristics of the 3 "bivariate distributions" that the LPA identified. Here are the three groups again:
+
+```{r VVV3Plot}
+grps.mclst = Mclust(grps.LPA, model="VVV", G=3, x = grps.BIC)
+plot(grps.mclst, what="classification", ylim=c(-2,6),xlmi=c(-2,6))
+title(main="VVV, 3")
+```
+The general summary associated with that can be obtained from the summary() function:
+
+```{r distributionSummary, echo=TRUE}
+summary(grps.mclst, parameters = T)
+```
+
+The first part of the output is about how well the data groups capture the variance in the data.
+
+Next you get some information about the group sizes: group 1 has 7297 datapoints, group 2 has 9501, and group 3 has 5482. The mixing probabilities are just the proportions that are assigned to each group (so 7297 data points in group 1 represents ~30% of the data).
+
+### Means
+
+After the mixing probabilities we get the means for each distribution (I've rounded them here):
+
+```{r distributionMeans, echo=TRUE}
+
+# round the values of the means to make it a bit less busy
+round(summary(grps.mclst, parameters = T)$mean, 2)
+
+```
+
+Each column represents one of the 3 distributions. So we can see that Group 1 has low reading scores, but moderately high math scores (green group); Group 2 has a very high mean for Reading, but lower Math corresponding with the red group; Group 3 has a low mean for Reading and a low-ish mean for Math, which is the blue group.
+
+### Covariances
+
+Next we can look at the covariance structure (labelled Variances). (These are the variances and covariances, which underlie the correlations)
+
+Each distribution has a matrix with the diagonals being the variances of Reading and Math, and the off-diagonal element being the covariance of Reading with Math.
+
+```{r distributionCov, echo=TRUE}
+
+round(grps.mclst$parameters$variance$sigma, 3)
+```
+
+Let's just consider the diagonal elements for the moment (variances). We can see that the blue group (G1 - the first matrix) has modest and relatively equal variances for both groups. Group 2 (red) has almost no math variance (.004) but a lot of reading variance (.410). Group 3 has a lot more Math than Reading variance (but both are high).
+
+### Correlations
+The covariances combine with the variances to give us the correlations. As a result, it's not obvious what the correlations are directly from the covariances in the matrices above. To get that we can use the cov2cor() function:
+
+```{r distributionCors, echo=TRUE}
+
+round(cov2cor(grps.mclst$parameters$variance$sigma[,,1]), 3) # Group 1
+round(cov2cor(grps.mclst$parameters$variance$sigma[,,2]), 3) # Group 2
+round(cov2cor(grps.mclst$parameters$variance$sigma[,,3]), 3) # Group 3
+```
+
+Correlations in the image show up as a combination of "stretchiness" in the oval, along with "tiltedness".
+
+Here we see that G1 (green) has a clear correlation (.2) - which fits the long, tilted shape of the distribution in the figure. G2 (red) has basically no correlation (.023), and G3 (blue) has about the same correlation as G1 (G3 is less stretchy but more tilted) .
+
+## Distribution of the fitted variables
+
+Looking at how the variables that went into the data differ by groups can be useful to better understand what the LPA thinks represents different profiles of data.
+
+## Characteristics on "non-LPA" variables.
+
+However, we can also  ask questions about how members of each profile compare on variables that were not actually part of the LPA. In this case, there's a third variable (NeedForCog - Need for Cognition) that was collected, but that we haven't discussed yet. It was not part of the data used to create three profiles.
+
+We can now ask whether NeedForCog differs for members of different profiles (recall, the profiles are only based on Reading and Math - NeedForCog is completely outside of that).
+
+### Categorical approach
+
+Each data point has been assigned to one of the three distributions as being its "most likely group". We can use those assignments and just compare the three groups based on this "most probable" category.
+
+The category assignments are stored in the grps.mclst object created by Mclust(...). We can link that the original dataset, and 
+
+```{r NeedForCogCategorical, echo=TRUE}
+
+# The group assignments are stored in a "classification" vector in the
+# grps.mclst object:
+grps = data.frame(grps %>% select(Reading, Math, NeedForCog), Group = grps.mclst$classification)
+head(grps)
+```
+Using those "group" assignments, we can now compare the variables.
+
+```{r NeedForCogCategoricalComparison, echo=TRUE}
+grps %>% group_by(Group) %>% 
+  summarize(N = n(), NeedForCog.mu = mean(NeedForCog), NeedForCog.sd = sd(NeedForCog))
+```
+In this case, G2 has a very low average Need For Cognition, but also quite a bit less variability.
+
+We can even go a step further and conduct a regression analysis, or analysis of variance, or what have you:
+
+```{r NeedForCogCategoricalRegression, echo=TRUE}
+summary(lm(NeedForCog~Group, grps %>% mutate(Group=factor(Group))))
+```
+
+There you can see that both Group2 and Group 3 differ  significantly from Group 1 (we have a large sample). pairwise.t.test is a quick way to compare multiple groups on a single variable with t-tests.
+
+```{r NeedForCogCategoricalTTests, echo=TRUE}
+pairwise.t.test(grps$NeedForCog, grps$Group)
+
+```
+
+
+### Continuous approach
+
+Most clustering techniques limit you to this approach - each datapoint is assigned to a cateogory and you can use those categories to explore the data. One really nice feature of LPA is that it offers another more nuanced approach to exploring the data.
+
+Let's revisit that figure again. If you look closely, there are a good number of points that fall sort of "between circles". Particulaty between the blue and green groups, and between the blue and red groups - there seem to be a lot of points that could probably be assigned to either distribution.
+
+While the figures I've been producing above make very strong decisions about which Group each point belongs in, LPA is not quite that firm. In the figure below, instead of just the group assignment, we plot how "confident" the LPA analysis was in the group assignments. Large bubbles indicate "uncertainty", so that the model is not very confident in its assignment for those points.
+
+```{r VVV3PlotUncertainty}
+plot(grps.mclst, what="uncertainty")
+title(main="VVV, 3")
+```
+From this figure, you can see that most of the blue and green circles are relatively "tentative" - the LPA is not overly confident in those choices. Many of the reds are very confident, but the poorer they are at reading, the less obvious it is they come from the "good readers" group.
+
+The reason it can do this, is because LPA doesn't actually classify each data point, rather it evaluates the probability that each data point would fit in *each of the groups* separately. So for each datapoint, LPA gives (in this case) 3 probabilities, one for each "group".
+
+Let's look at some of those data points:
+
+```{r VVV3Probs}
+
+data.frame(grps.mclst$z) %>% sample_n(5) %>% round(2)
+```
+
+Each column represents the probability that LPA would assign that particular data point to each group. The first entry is 96% likely to be group 3 (blue), and much less likely be in Group 1 (green - 4%) or 2 red (0%). The second entry is probably from Group 1 (64%), but could be from Group 3 (36%). The last two entries are almost certainly from Group 2 (red).
+
+What this means is that we don't have to treat each data point as if it belongs entirely to its assigned Group. We can think of the datapoint as being split amongst the groups in proportion to these probabilities.
+
+So the first entry is not "blue" but 4% green, 96% blue. That means the model is pretty confident about which distribution this datapoint came from with only 4% uncertainty.
+The second entry is 64% green, 36% green. (36% uncertain)
+The third entry are 76% green, 24% blue. (24% uncertain)
+The last two entries are 100% red. (extremely confident  with 0% uncertainty)
+
+We can use these proportions to *weight* the values that we calculate in our other variables, rather than using the categorical variables.
+
+This is a little bit tricky, but the basic approach looks like this:
+
+```{r VVV3WeightedMeans, echo=T}
+# The probabilities for each datapoint and each group are stored in $z of the 
+# MClust object: grps.mclst$z. Each column refers to one group.
+
+# To get the weighted mean of NeedForCog for Group 1, we use the first column of the
+# probabilities.
+NeedForCog.1=weighted.mean(grps$NeedForCog, w=grps.mclst$z[,1])
+# Group 2:
+NeedForCog.2=weighted.mean(grps$NeedForCog, w=grps.mclst$z[,2])
+# Group 3:
+NeedForCog.3=weighted.mean(grps$NeedForCog, w=grps.mclst$z[,3])
+
+round(rbind(wtd = c(G1=NeedForCog.1, G2=NeedForCog.2, G3=NeedForCog.3),
+      cat = c(G1=1.11, G2=.34, G3=1.07)),2)
+
+
+```
+
+We can compare those to the "categorical" version and notice that they produce similar but not quite identical values.
+
+It's also worth noting that by using weighted values rather than "all or nothing" categories, we change the "number" of datapoints in each Group.
+
+```{r weightedNs, echo=T}
+
+colSums(grps.mclst$z)
+```
+
+
+### A note on weighting
+
+There are other calculations that can be weighted (e.g., variances and covariances, lots of statistical tests). I won't go over those here, but you can look for weighted versions of your analyses in R (many will require other packages). Weighting variables is not a trivial process, so be careful that you understand what is being weighted and how.
+
