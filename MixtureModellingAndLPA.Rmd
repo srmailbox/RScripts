@@ -374,9 +374,9 @@ Each distribution has a matrix with the diagonals being the variances of Reading
 round(grps.mclst$parameters$variance$sigma, 3)
 ```
 
-Let's just consider the diagonal elements for the moment (variances). We can see that the pink group (G1 - the first matrix) has modest and relatively equal variances for both groups. Group 2 (green) has quite a lot more math variance than reading. Group 3 (blue) is generally high variance in both variables.
+Let's just consider the diagonal elements for the moment (variances). We can see that the pink group (G1 - the first matrix) has somewhat more reading variance than math, while Group 2 (green) has more math variance than reading. Group 3 (blue) is very high, relatively equal variance in both variables.
 
-This is a good example of how "space" does not mean "group size". The blue group (Group 3) has far fewer observations than Group 2 (green), but it takes up a lot more space because the variances are considerably larger.
+This is a good example of how "space" does not mean "group size". The blue group has far fewer observations than the green group (6980 vs 9457), but it takes up more space because the variances are considerably larger.
 
 ### Correlations
 The covariances combine with the variances to give us the correlations. As a result, it's not obvious what the correlations are directly from the covariances matrices above. To get that we can use the cov2cor() function:
@@ -391,8 +391,6 @@ round(cov2cor(grps.mclst$parameters$variance$sigma[,,3]), 3) # Group 3
 Correlations in the image show up as a combination of "stretchiness" in the oval, along with "tiltedness".
 
 Here we see that G1 (pink) has a strong correlation (.66) - which fits the long, tilted shape of the distribution in the figure. G2 (green) has a modest, negative correlation (-.32), and G3 (blue) has a positive correlation that is a bit weaker than the pink group.
-
-Of course, we could see all of that from the shape of the black ovals on the plot as well.
 
 ### Distribution of the fitted variables
 
